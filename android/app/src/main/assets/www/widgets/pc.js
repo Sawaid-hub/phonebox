@@ -1,4 +1,4 @@
-import { $, API, D, PANEL_HEADERS, LOCALE, Q_STYLE, api, bridge, cfg, color, cssVar, rulesPaused, toggleRulesPause, fillIcon, fmtDur, fmtHM, fmtMem, gotoPageRef, gpuMem, gpusOf, h, en, haptic, icon, openSheet, paceInfo, pad, pairedPcs, quotaProviders, r1, shortGpu, store, switchPc, t, tick, toast, transport, emo, labelled, rich } from '../main.js';
+import { $, API, D, PANEL_HEADERS, LOCALE, Q_STYLE, api, bridge, cfg, color, cssVar, rulesPaused, toggleRulesPause, fillIcon, fmtDur, fmtHM, fmtMem, gotoPageRef, gpuMem, gpusOf, h, en, haptic, icon, openSheet, paceInfo, pad, pairedPcs, quotaProviders, r1, shortDur, shortGpu, store, switchPc, t, tick, toast, transport, emo, labelled, rich } from '../main.js';
 import { W } from '../registry.js';
 import { canKillAnywhere, dialEl, every } from './helpers.js';
 
@@ -217,6 +217,105 @@ W.discord = {
     };
     const tick = every(2000, async () => { await load(); render(); });
     return { update: () => { tick(); render(); } };
+  },
+};
+
+// Steam friends presence via the local agent's Web API connection. The API key never reaches the phone.
+function steamPortrait(friend) {
+  const name = friend.name || 'Steam user';
+  const fallback = h('span', 'st-avatar-fallback', [...name.trim()][0]?.toLocaleUpperCase() || '🎮');
+  let image = null;
+  if (friend.avatar) {
+    image = h('img', 'st-avatar');
+    image.alt = '';
+    image.loading = 'lazy';
+    image.decoding = 'async';
+    image.referrerPolicy = 'no-referrer';
+    image.src = `${API}/steam/avatar?id=${encodeURIComponent(friend.id)}`;
+    image.onerror = () => image.replaceWith(fallback);
+  }
+  return h('span', 'st-portrait', image || fallback, h('i', `st-dot state-${friend.state || 0}`));
+}
+
+function steamFriendRow(friend, sub) {
+  return h('div', `st-row${friend.state > 0 ? ' online' : ''} state-${friend.state || 0}`,
+    steamPortrait(friend), h('span', 'st-info', h('b', 'st-name', friend.name || 'Steam user'), h('small', 'st-sub', sub)));
+}
+
+W.steam = {
+  needs: ['tick'],
+  create(box, { o }) {
+    let data = null, lastKey = '';
+    const load = async () => { try { data = await api('/steam', 'GET', 5000); return true; } catch (_) { return false; } };
+    const stateLabel = (state) => ({
+      1: t('w.steam.state.online'), 2: t('w.steam.state.busy'), 3: t('w.steam.state.away'),
+      4: t('w.steam.state.snooze'), 5: t('w.steam.state.trade'), 6: t('w.steam.state.play'),
+    }[state] || t('w.offline'));
+    const render = () => {
+      const key = JSON.stringify([data, o.offline, box.clientHeight]);
+      if (key === lastKey) return;
+      lastKey = key;
+      if (!data) { box.replaceChildren(h('div', 'empty', t('w.loading'))); return; }
+      if (!data.enabled) { box.replaceChildren(h('div', 'w-title', 'Steam'), h('div', 'empty', t('w.steam.turnOn'))); return; }
+      const s = data.snapshot || {};
+      if (!s.connected && !s.friends?.length) {
+        box.replaceChildren(h('div', 'w-title', 'Steam'), h('div', 'empty', s.error || t('panel.connecting')));
+        return;
+      }
+      const all = s.friends || [];
+      const friends = (o.offline ? all : all.filter((f) => f.state > 0))
+        .sort((a, b) => Number(!!b.game) - Number(!!a.game) || a.name.localeCompare(b.name));
+      const body = [];
+      if (s.error) body.push(h('div', 'st-error', s.error));
+      if (!s.totalFriends) body.push(h('div', 'empty', t('w.steam.noFriends')));
+      else if (!all.length) body.push(h('div', 'empty', t('w.steam.noVisibleFriends')));
+      else if (!friends.length) body.push(h('div', 'empty', t('w.steam.noOnline')));
+      else body.push(h('div', 'st-list', ...friends.map((f) => steamFriendRow(f,
+        f.game ? t('w.steam.playing', { game: f.game })
+          : f.state > 0 ? stateLabel(f.state)
+            : f.lastLogoff ? t('w.steam.lastSeen', { time: shortDur(Date.now() - f.lastLogoff * 1000) })
+              : stateLabel(f.state)))));
+      box.replaceChildren(h('div', 'st-head', h('div', 'w-title', 'Steam'),
+        h('span', 'st-count', t('w.steam.onlineCount', { online: s.onlineCount || 0, total: s.totalFriends || 0 }))), ...body);
+    };
+    const tick = every(15000, async () => { await load(); render(); });
+    return { update: () => { tick(); render(); } };
+  },
+};
+
+// A short local history of public Steam presence changes (not private chat messages).
+W['steam-activity'] = {
+  needs: ['tick'],
+  create(box) {
+    let data = null, lastKey = '';
+    const load = async () => { try { data = await api('/steam', 'GET', 5000); return true; } catch (_) { return false; } };
+    const render = () => {
+      const key = JSON.stringify(data);
+      if (key === lastKey) return;
+      lastKey = key;
+      if (!data) { box.replaceChildren(h('div', 'empty', t('w.loading'))); return; }
+      if (!data.enabled) { box.replaceChildren(h('div', 'w-title', t('w.steam.activity.title')), h('div', 'empty', t('w.steam.turnOn'))); return; }
+      const s = data.snapshot || {};
+      if (!s.connected && !s.friends?.length) {
+        box.replaceChildren(h('div', 'w-title', t('w.steam.activity.title')), h('div', 'empty', s.error || t('panel.connecting')));
+        return;
+      }
+      const events = s.activity || [];
+      const rows = events.map((e) => {
+        const label = e.kind === 'playing' ? t('w.steam.activity.playing', { game: e.game || '' })
+          : e.kind === 'offline' ? t('w.steam.activity.offline') : t('w.steam.activity.online');
+        const age = e.at ? Date.now() - e.at : 0;
+        return h('div', 'st-event', steamPortrait(e),
+          h('span', 'st-info', h('b', 'st-name', e.name || 'Steam user'), h('small', 'st-sub', label)),
+          h('small', 'st-time', age < 60_000 ? t('time.justNow') : t('time.ago', { dur: shortDur(age) })));
+      });
+      box.replaceChildren(h('div', 'st-head', h('div', 'w-title', t('w.steam.activity.title')),
+        h('span', 'st-count', events.length)),
+      s.error ? h('div', 'st-error', s.error) : null,
+      events.length ? h('div', 'st-list st-activity-list', ...rows) : h('div', 'empty', t('w.steam.activity.empty')));
+    };
+    const poll = every(30000, async () => { await load(); render(); });
+    return { update: () => { poll(); render(); } };
   },
 };
 

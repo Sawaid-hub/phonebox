@@ -578,6 +578,14 @@
         channels: [{ id: 'c1', name: 'Game night', guild: 'Friends' }, { id: 'c2', name: 'Stand-up', guild: 'Work' }],
         notifications: [{ ts: now() - 60000, title: 'Ada', body: 'are you joining?' }] } });
     }
+    if (path === '/api/steam') return json({ enabled: true, snapshot: {
+      connected: true, error: null, totalFriends: 2, onlineCount: 1, updated: now(),
+      friends: [
+        { id: '76561198000000001', name: 'Ada', state: 1, game: 'Hades II', gameId: '1145350', avatar: 'https://avatars.steamstatic.com/demo-ada.jpg', lastLogoff: null },
+        { id: '76561198000000002', name: 'Linus', state: 0, game: null, gameId: null, avatar: 'https://avatars.steamstatic.com/demo-linus.jpg', lastLogoff: Math.floor(now() / 1000) - 7200 },
+      ],
+      activity: [{ id: '76561198000000001', name: 'Ada', avatar: 'https://avatars.steamstatic.com/demo-ada.jpg', kind: 'playing', game: 'Hades II', at: now() - 180000 }],
+    } });
     if (path.startsWith('/api/discord/') && method === 'POST') {
       if (!allows(await config(), (t) => t === 'discord')) return json({ error: "controlling Discord is turned off in the widget's settings" }, 400);
       const a = path.slice(13);

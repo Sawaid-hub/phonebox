@@ -88,6 +88,7 @@ AddMonitor<CalendarMonitor>(builder.Services);
 AddMonitor<DockerMonitor>(builder.Services);
 AddMonitor<ObsMonitor>(builder.Services);
 AddMonitor<DiscordMonitor>(builder.Services);
+AddMonitor<SteamMonitor>(builder.Services);
 AddMonitor<BatteryMonitor>(builder.Services);
 AddMonitor<RuleEngine>(builder.Services);
 AddMonitor<ChargeGuard>(builder.Services);
@@ -593,6 +594,16 @@ app.MapGet("/api/discord/img", async (string kind, string id, string hash, Disco
         ? Results.File(img.Data, img.Type, lastModified: null, entityTag: null, enableRangeProcessing: false) : Results.NotFound());
 app.MapPost("/api/discord/{action}", async (string action, string? channel, DiscordMonitor dc) =>
     await dc.ActAsync(action, channel) is { } error ? Results.BadRequest(new { error }) : Results.Ok(new { ok = true }));
+
+// Steam friends presence; the API key stays on the computer and only the public presence snapshot reaches the phone.
+app.MapGet("/api/steam", (SteamMonitor steam, ConfigStore cfg) => Results.Json(new
+{
+    enabled = cfg.Get().Steam.Enabled,
+    snapshot = steam.Snapshot(),
+}));
+app.MapGet("/api/steam/avatar", async (string id, SteamMonitor steam, CancellationToken ct) =>
+    await steam.AvatarAsync(id, ct) is { } img
+        ? Results.File(img.Data, img.Type, lastModified: null, entityTag: null, enableRangeProcessing: false) : Results.NotFound());
 
 // Battery levels of wireless devices (headphones, mice, keyboards…), for the Device batteries widget.
 app.MapGet("/api/batteries", (BatteryMonitor b) => Results.Json(new { devices = b.Snapshot() }));

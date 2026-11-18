@@ -640,6 +640,16 @@ nav a.on::before { color: var(--accent); }
       </div>
 
       <div class="card">
+        <h3 data-i18n="s.steam.title">Steam</h3>
+        <div class="row" style="margin-bottom:8px"><label class="switch"><input type="checkbox" data-bind="steam.enabled"><span></span></label> <span data-i18n="s.steam.enable">Connect Steam (for the Steam friends widget)</span></div>
+        <p class="hint" style="margin:0 0 12px" data-i18n="s.steam.hint">Create a user Web API key at steamcommunity.com/dev/apikey and enter your SteamID64. Your friend list and game details must be public for Steam to show them. The key stays on this computer. Step by step: docs/STEAM.md.</p>
+        <div class="grid2">
+          <div class="field"><label data-i18n="s.steam.id">SteamID64 or profile URL</label><input type="text" data-bind="steam.steamId" autocomplete="off" spellcheck="false" placeholder="7656119… or profile link"></div>
+          <div class="field"><label data-i18n="s.steam.key">User Web API key</label><input type="password" data-bind="steam.apiKey" autocomplete="off"></div>
+        </div>
+      </div>
+
+      <div class="card">
         <h3 data-i18n="s.obs.title">OBS Studio</h3>
         <div class="row" style="margin-bottom:8px"><label class="switch"><input type="checkbox" data-bind="obs.enabled"><span></span></label> <span data-i18n-html="s.obs.enable">Connect to OBS (for the <b>OBS</b> widget, the On air widget and rules)</span></div>
         <p class="hint" style="margin:0 0 12px" data-i18n-html="s.obs.hint">In OBS: Tools › WebSocket Server Settings › <i>Enable WebSocket server</i>; copy the password from <i>Show Connect Info</i>.</p>
@@ -2264,6 +2274,7 @@ let activeRules = [];
 
 function renderRules() {
   cfg.rules ??= []; cfg.calendars ??= []; cfg.feeds ??= []; cfg.cameras ??= { ffmpeg: '', sources: [] }; cfg.photos ??= { folder: '', subfolders: true }; cfg.console ??= { profiles: [] }; cfg.phones ??= []; cfg.homeAssistant ??= {}; cfg.obs ??= { enabled: false, url: 'ws://127.0.0.1:4455' }; cfg.discord ??= { enabled: false };
+  cfg.rules ??= []; cfg.calendars ??= []; cfg.feeds ??= []; cfg.cameras ??= { ffmpeg: '', sources: [] }; cfg.photos ??= { folder: '', subfolders: true }; cfg.console ??= { profiles: [] }; cfg.phones ??= []; cfg.homeAssistant ??= {}; cfg.obs ??= { enabled: false, url: 'ws://127.0.0.1:4455' }; cfg.discord ??= { enabled: false }; cfg.steam ??= { enabled: false };
   $('rulePresets').replaceChildren(...RULE_PRESETS.map(([label, make]) => h('button', { class: 'btn', onclick: () => {
     cfg.rules.push({ id: '', enabled: true, ...make() });
     renderRules(); changed();
@@ -3207,6 +3218,7 @@ function fillDefaults() {
   for (const [k, v] of Object.entries({ language: 'auto', hour12: false, idleReturnSec: 90, switchCountdownSec: 3, touchGraceSec: 20, minDwellSec: 15, holdMaxMin: 30, keepAwake: true,
     showSeconds: true, vibrate: true, finishToast: true, volumeKeys: true, artTint: true, proximityWake: true, orientation: 'landscape', theme: 'default', accent: '#2dd4bf' })) cfg.display[k] ??= v;
   cfg.charge ??= { enabled: false, min: 50, max: 80, method: 'ha' };
+  cfg.steam ??= { enabled: false };
 }
 
 async function load() {

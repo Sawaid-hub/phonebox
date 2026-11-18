@@ -20,6 +20,7 @@ android/.kotlin/
 
 # Build output
 dist/
+install-dev.ps1
 
 # Local tooling / personal data
 .temp_files/

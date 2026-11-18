@@ -13,6 +13,8 @@ Last updated: 2026-11-15 (PhoneBox 0.9.6).
   On macOS and Linux these files are readable only by your user (0600).
 - **Discord login**: if you use the Discord widget, `discord-token.json` next to `config.json` holds the access and
   refresh token Discord gave PhoneBox (on macOS and Linux readable only by your user).
+- **Steam key**: if you use the Steam friends widget, the SteamID or profile URL and your Web API key are stored in
+  `config.json` on this computer. The key is never sent to the phone.
 - **Last Claude quota reading**: `claude-quota.json` next to the log (usage percentages and reset times, no token),
   so the panel can show the last values after a restart, and `claude-quota-schedule.json` (when the next check may
   run, the last error message and, after Anthropic refused a token, a 16-character hash of that token, never the token
