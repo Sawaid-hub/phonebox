@@ -224,38 +224,67 @@ W.discord = {
 function steamPortrait(friend) {
   const name = friend.name || 'Steam user';
   const fallback = h('span', 'st-avatar-fallback', [...name.trim()][0]?.toLocaleUpperCase() || '🎮');
-  let image = null;
+  const portrait = h('span', 'st-portrait', fallback);
   if (friend.avatar) {
-    image = h('img', 'st-avatar');
+    const image = h('img', 'st-avatar');
     image.alt = '';
     image.loading = 'lazy';
     image.decoding = 'async';
     image.referrerPolicy = 'no-referrer';
-    image.src = `${API}/steam/avatar?id=${encodeURIComponent(friend.id)}`;
-    image.onerror = () => image.replaceWith(fallback);
+    fetch(`${API}/steam/avatar?id=${encodeURIComponent(friend.id)}`, { cache: 'no-store', headers: PANEL_HEADERS })
+      .then((response) => { if (!response.ok) throw new Error('avatar unavailable'); return response.blob(); })
+      .then((blob) => {
+        if (!fallback.isConnected) return;
+        const url = URL.createObjectURL(blob);
+        image.onload = () => URL.revokeObjectURL(url);
+        image.onerror = () => { URL.revokeObjectURL(url); image.replaceWith(fallback); };
+        image.src = url;
+        fallback.replaceWith(image);
+      }).catch(() => {});
   }
-  return h('span', 'st-portrait', image || fallback, h('i', `st-dot state-${friend.state || 0}`));
+  if (Number.isInteger(friend.state)) portrait.append(h('i', `st-dot state-${friend.state}`));
+  return portrait;
+}
+
+function refreshSteamTimes(box) {
+  box.querySelectorAll('.st-sub[data-last-logoff]').forEach((label) => {
+    const lastLogoff = Number(label.dataset.lastLogoff);
+    if (lastLogoff > 0) label.textContent = t('w.steam.lastSeen', { time: shortDur(Date.now() - lastLogoff * 1000) });
+  });
+  box.querySelectorAll('.st-time[data-at]').forEach((label) => {
+    const at = Number(label.dataset.at);
+    const age = Math.max(0, Date.now() - at);
+    label.textContent = age < 60_000 ? t('time.justNow') : t('time.ago', { dur: shortDur(age) });
+  });
 }
 
 function steamFriendRow(friend, sub) {
-  return h('div', `st-row${friend.state > 0 ? ' online' : ''} state-${friend.state || 0}`,
-    steamPortrait(friend), h('span', 'st-info', h('b', 'st-name', friend.name || 'Steam user'), h('small', 'st-sub', sub)));
+  const classes = ['st-row'];
+  if (Number.isInteger(friend.state)) classes.push(`state-${friend.state}`);
+  if (friend.state > 0) classes.push('online');
+  const detail = h('small', 'st-sub', sub);
+  if (friend.state <= 0 && !friend.game && friend.lastLogoff) detail.dataset.lastLogoff = String(friend.lastLogoff);
+  return h('div', classes.join(' '),
+    steamPortrait(friend), h('span', 'st-info', h('b', 'st-name', friend.name || 'Steam user'), detail));
 }
 
 W.steam = {
   needs: ['tick'],
   create(box, { o }) {
-    let data = null, lastKey = '';
-    const load = async () => { try { data = await api('/steam', 'GET', 5000); return true; } catch (_) { return false; } };
+    let data = null, lastKey = '', failed = false, settled = false;
+    const load = async () => {
+      try { data = await api('/steam', 'GET', 5000); failed = false; settled = true; return true; }
+      catch (_) { failed = true; settled = true; return false; }
+    };
     const stateLabel = (state) => ({
       1: t('w.steam.state.online'), 2: t('w.steam.state.busy'), 3: t('w.steam.state.away'),
       4: t('w.steam.state.snooze'), 5: t('w.steam.state.trade'), 6: t('w.steam.state.play'),
     }[state] || t('w.offline'));
     const render = () => {
-      const key = JSON.stringify([data, o.offline, box.clientHeight]);
-      if (key === lastKey) return;
+      const key = JSON.stringify([data, o.offline, box.clientHeight, failed, settled]);
+      if (key === lastKey) { refreshSteamTimes(box); return; }
       lastKey = key;
-      if (!data) { box.replaceChildren(h('div', 'empty', t('w.loading'))); return; }
+      if (!data) { box.replaceChildren(h('div', 'empty', t(failed ? 'w.unavailable' : 'w.loading'))); return; }
       if (!data.enabled) { box.replaceChildren(h('div', 'w-title', 'Steam'), h('div', 'empty', t('w.steam.turnOn'))); return; }
       const s = data.snapshot || {};
       if (!s.connected && !s.friends?.length) {
@@ -266,6 +295,7 @@ W.steam = {
       const friends = (o.offline ? all : all.filter((f) => f.state > 0))
         .sort((a, b) => Number(!!b.game) - Number(!!a.game) || a.name.localeCompare(b.name));
       const body = [];
+      if (failed || s.error) body.push(h('div', 'st-error', t('w.steam.stale')));
       if (s.error) body.push(h('div', 'st-error', s.error));
       if (!s.totalFriends) body.push(h('div', 'empty', t('w.steam.noFriends')));
       else if (!all.length) body.push(h('div', 'empty', t('w.steam.noVisibleFriends')));
@@ -274,7 +304,7 @@ W.steam = {
         f.game ? t('w.steam.playing', { game: f.game })
           : f.state > 0 ? stateLabel(f.state)
             : f.lastLogoff ? t('w.steam.lastSeen', { time: shortDur(Date.now() - f.lastLogoff * 1000) })
-              : stateLabel(f.state)))));
+              : Number.isInteger(f.state) ? stateLabel(f.state) : '?'))));
       box.replaceChildren(h('div', 'st-head', h('div', 'w-title', 'Steam'),
         h('span', 'st-count', t('w.steam.onlineCount', { online: s.onlineCount || 0, total: s.totalFriends || 0 }))), ...body);
     };
@@ -287,16 +317,19 @@ W.steam = {
 W['steam-activity'] = {
   needs: ['tick'],
   create(box) {
-    let data = null, lastKey = '';
-    const load = async () => { try { data = await api('/steam', 'GET', 5000); return true; } catch (_) { return false; } };
+    let data = null, lastKey = '', failed = false, settled = false;
+    const load = async () => {
+      try { data = await api('/steam', 'GET', 5000); failed = false; settled = true; return true; }
+      catch (_) { failed = true; settled = true; return false; }
+    };
     const render = () => {
-      const key = JSON.stringify(data);
-      if (key === lastKey) return;
+      const key = JSON.stringify([data, failed, settled]);
+      if (key === lastKey) { refreshSteamTimes(box); return; }
       lastKey = key;
-      if (!data) { box.replaceChildren(h('div', 'empty', t('w.loading'))); return; }
+      if (!data) { box.replaceChildren(h('div', 'empty', t(failed ? 'w.unavailable' : 'w.loading'))); return; }
       if (!data.enabled) { box.replaceChildren(h('div', 'w-title', t('w.steam.activity.title')), h('div', 'empty', t('w.steam.turnOn'))); return; }
       const s = data.snapshot || {};
-      if (!s.connected && !s.friends?.length) {
+      if (!s.connected && !s.activity?.length) {
         box.replaceChildren(h('div', 'w-title', t('w.steam.activity.title')), h('div', 'empty', s.error || t('panel.connecting')));
         return;
       }
@@ -305,12 +338,15 @@ W['steam-activity'] = {
         const label = e.kind === 'playing' ? t('w.steam.activity.playing', { game: e.game || '' })
           : e.kind === 'offline' ? t('w.steam.activity.offline') : t('w.steam.activity.online');
         const age = e.at ? Date.now() - e.at : 0;
+        const time = h('small', 'st-time', age < 60_000 ? t('time.justNow') : t('time.ago', { dur: shortDur(age) }));
+        if (e.at) time.dataset.at = String(e.at);
         return h('div', 'st-event', steamPortrait(e),
           h('span', 'st-info', h('b', 'st-name', e.name || 'Steam user'), h('small', 'st-sub', label)),
-          h('small', 'st-time', age < 60_000 ? t('time.justNow') : t('time.ago', { dur: shortDur(age) })));
+          time);
       });
       box.replaceChildren(h('div', 'st-head', h('div', 'w-title', t('w.steam.activity.title')),
         h('span', 'st-count', events.length)),
+      failed || s.error ? h('div', 'st-error', t('w.steam.stale')) : null,
       s.error ? h('div', 'st-error', s.error) : null,
       events.length ? h('div', 'st-list st-activity-list', ...rows) : h('div', 'empty', t('w.steam.activity.empty')));
     };

@@ -21,10 +21,16 @@ test('Steam friends show avatars, presence, last seen, and recent activity', asy
 
   const friends = page.locator('.w-steam');
   await expect(friends.locator('.st-row')).toHaveCount(2);
+  await expect(friends.locator('.st-row').nth(0)).toHaveClass(/\bonline\b/);
+  await expect(friends.locator('.st-row').nth(0)).toHaveClass(/\bstate-1\b/);
+  await expect(friends.locator('.st-row').nth(1)).toHaveClass(/\bstate-0\b/);
+  await expect(friends.locator('.st-row').nth(1)).not.toHaveClass(/\bonline\b/);
   await expect(friends.locator('.st-name').first()).toHaveText('Ada');
   await expect(friends.locator('.st-sub').first()).toHaveText('Playing Hades II');
   await expect(friends.locator('.st-sub').nth(1)).toContainText('Last seen');
-  await expect(friends.locator('.st-avatar').first()).toHaveAttribute('src', /\/steam\/avatar\?id=76561198000000001/);
+  const avatar = friends.locator('.st-avatar').first();
+  await expect(avatar).toHaveAttribute('src', /^blob:/);
+  await expect.poll(() => avatar.evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
 
   const activity = page.locator('.w-steam-activity');
   await expect(activity.locator('.st-event')).toHaveCount(1);

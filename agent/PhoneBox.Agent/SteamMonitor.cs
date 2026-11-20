@@ -1,10 +1,9 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json.Nodes;
 
 namespace PhoneBox.Agent;
 
-public sealed record SteamFriend(string Id, string Name, int State, string? Game, string? GameId, string? Avatar, long? LastLogoff);
+public sealed record SteamFriend(string Id, string Name, int? State, string? Game, string? GameId, string? Avatar, long? LastLogoff);
 public sealed record SteamActivityEvent(string Id, string Name, string? Avatar, string Kind, string? Game, long At);
 public sealed record SteamSnapshot(bool Connected, string? Error, int TotalFriends, int OnlineCount,
     long? Updated, IReadOnlyList<SteamFriend> Friends, IReadOnlyList<SteamActivityEvent> Activity);
@@ -12,15 +11,17 @@ public sealed record SteamSnapshot(bool Connected, string? Error, int TotalFrien
 /// <summary>Reads a user's friend list and presence from Steam's Web API while an enabled page contains the widget.</summary>
 public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) : BackgroundService
 {
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
-    private static readonly HttpClient AvatarHttp = new() { Timeout = TimeSpan.FromSeconds(10) };
+    private sealed record PublishedSnapshot(SteamSnapshot Value, string? SteamId, string? ApiKey);
+
+    private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(20) };
+    private static readonly HttpClient AvatarHttp = CreateAvatarHttp();
     private static readonly TimeSpan PollEvery = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan FriendsEvery = TimeSpan.FromMinutes(15);
     private const int SummaryBatchSize = 100;
     private const int AvatarMaxBytes = 512 * 1024;
     private const long AvatarCacheLimit = 8 * 1024 * 1024;
 
-    private volatile SteamSnapshot _snapshot = Empty(null);
+    private volatile PublishedSnapshot _published = new(Empty(null), null, null);
     private string? _steamId;
     private string? _apiKey;
     private string? _resolvedAccountId;
@@ -30,18 +31,63 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
     private readonly Dictionary<string, (int State, string? Game, string? GameId)> _lastPresence = new(StringComparer.Ordinal);
     private readonly List<SteamActivityEvent> _activity = [];
     private bool _hasPresenceBaseline;
-    private readonly ConcurrentDictionary<string, (byte[] Data, string Type)> _avatars = new(StringComparer.Ordinal);
+    private readonly object _avatarLock = new();
+    private readonly Dictionary<string, (byte[] Data, string Type)> _avatars = new(StringComparer.Ordinal);
     private long _avatarBytes;
+    private long _avatarGeneration;
+
+    private static HttpClient CreateAvatarHttp()
+    {
+        var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(10) };
+        client.MaxResponseContentBufferSize = AvatarMaxBytes;
+        return client;
+    }
+
+    private void ResetAvatarCache()
+    {
+        lock (_avatarLock)
+        {
+            _avatars.Clear();
+            _avatarBytes = 0;
+            _avatarGeneration++;
+        }
+    }
 
     private static SteamSnapshot Empty(string? error) => new(false, error, 0, 0, null, [], []);
 
     internal static bool WidgetWanted(AgentConfig cfg) =>
         cfg.Widgets(enabledPagesOnly: true).Any(w => w.Type is "steam" or "steam-activity");
 
-    public SteamSnapshot Snapshot()
+    public SteamSnapshot Snapshot(bool includeFriends, bool includeOffline, bool includeActivity)
     {
         var cfg = config.Get();
-        return cfg.Steam.Enabled && WidgetWanted(cfg) ? _snapshot : Empty(null);
+        var published = _published;
+        if (!cfg.Steam.Enabled || !WidgetWanted(cfg)
+            || published.SteamId != (cfg.Steam.SteamId?.Trim() ?? "")
+            || published.ApiKey != (cfg.Steam.ApiKey?.Trim() ?? "")) return Empty(null);
+        var value = published.Value;
+        SteamFriend[] friends;
+        if (!includeFriends) friends = [];
+        else if (includeOffline)
+            friends = value.Friends.Where(f => f.State is > 0)
+                .Concat(value.Friends.Where(f => f.State is not > 0).Take(50)).ToArray();
+        else friends = value.Friends.Where(f => f.State is > 0).ToArray();
+        return value with
+        {
+            TotalFriends = includeFriends ? value.TotalFriends : 0,
+            OnlineCount = includeFriends ? value.OnlineCount : 0,
+            Updated = null,
+            Friends = friends,
+            Activity = includeActivity ? value.Activity : [],
+        };
+    }
+
+    private bool IsActive(string steamId, string apiKey)
+    {
+        var cfg = config.Get();
+        return cfg.Steam.Enabled && WidgetWanted(cfg)
+            && (cfg.Steam.SteamId?.Trim() ?? "") == steamId
+            && (cfg.Steam.ApiKey?.Trim() ?? "") == apiKey;
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -52,7 +98,8 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
             var steam = cfg.Steam;
             if (!steam.Enabled || !WidgetWanted(cfg))
             {
-                _snapshot = Empty(null);
+                if (_steamId is not null || _apiKey is not null) ResetAvatarCache();
+                _published = new(Empty(null), null, null);
                 _steamId = _apiKey = null;
                 _resolvedAccountId = null;
                 _friendIds = [];
@@ -61,8 +108,6 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
                 _lastPresence.Clear();
                 _activity.Clear();
                 _hasPresenceBaseline = false;
-                _avatars.Clear();
-                Interlocked.Exchange(ref _avatarBytes, 0);
                 await Task.Delay(TimeSpan.FromSeconds(5), ct);
                 continue;
             }
@@ -80,14 +125,13 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
                 _lastPresence.Clear();
                 _activity.Clear();
                 _hasPresenceBaseline = false;
-                _avatars.Clear();
-                Interlocked.Exchange(ref _avatarBytes, 0);
-                _snapshot = Empty(null);
+                ResetAvatarCache();
+                _published = new(Empty(null), null, null);
             }
 
             if (id.Length == 0 || key.Length == 0)
             {
-                _snapshot = Empty("Add your SteamID64 and Web API key in Settings › General › Steam");
+                _published = new(Empty("Add your SteamID64 and Web API key in Settings › General › Steam"), id, key);
                 await Task.Delay(TimeSpan.FromSeconds(5), ct);
                 continue;
             }
@@ -95,15 +139,22 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
             {
                 try
                 {
-                    _resolvedAccountId ??= await ResolveAccountId(id, key, ct);
-                    await Refresh(_resolvedAccountId, key, ct);
+                    if (IsActive(id, key))
+                    {
+                        if (id.Length != 17 || !id.All(char.IsAsciiDigit))
+                            throw new InvalidOperationException("Save the Steam profile URL in Settings to resolve it to a SteamID64");
+                        _resolvedAccountId ??= id;
+                        await Refresh(_resolvedAccountId, key, id, ct);
+                    }
                     _nextPoll = DateTime.UtcNow + PollEvery;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
-                    var message = ex is HttpRequestException ? "Could not reach Steam" : ex.Message;
-                    _snapshot = _snapshot with { Connected = false, Error = message };
+                    var message = Redact(ex is HttpRequestException ? "Could not reach Steam" : ex.Message, key);
+                    var previous = _published;
+                    var snapshot = previous.SteamId == id && previous.ApiKey == key ? previous.Value : Empty(null);
+                    _published = new(snapshot with { Connected = false, Error = message }, id, key);
                     _nextPoll = DateTime.UtcNow.AddMinutes(2);
                     log.LogInformation("steam: {Msg}", message);
                 }
@@ -112,11 +163,14 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
         }
     }
 
-    private async Task Refresh(string steamId, string apiKey, CancellationToken ct)
+    private async Task Refresh(string steamId, string apiKey, string settingsSteamId, CancellationToken ct)
     {
+        if (!IsActive(settingsSteamId, apiKey)) return;
         if (_friendsAt == DateTime.MinValue || DateTime.UtcNow - _friendsAt >= FriendsEvery)
         {
+            if (!IsActive(settingsSteamId, apiKey)) return;
             var list = await Request("ISteamUser/GetFriendList/v1/", $"steamid={Uri.EscapeDataString(steamId)}&relationship=friend", apiKey, ct);
+            if (!IsActive(settingsSteamId, apiKey)) return;
             var ids = list["friendslist"]?["friends"]?.AsArray()
                 .Select(f => Text(f?["steamid"]))
                 .OfType<string>()
@@ -125,19 +179,25 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
                 .ToArray() ?? [];
             _friendIds = ids;
             _friendsAt = DateTime.UtcNow;
+            var currentIds = ids.ToHashSet(StringComparer.Ordinal);
+            foreach (var previousId in _lastPresence.Keys.Where(id => !currentIds.Contains(id)).ToArray())
+                _lastPresence.Remove(previousId);
         }
 
         var friends = new List<SteamFriend>();
         for (var i = 0; i < _friendIds.Length; i += SummaryBatchSize)
         {
+            if (!IsActive(settingsSteamId, apiKey)) return;
             var batch = _friendIds.Skip(i).Take(SummaryBatchSize);
             var ids = string.Join(',', batch.Select(Uri.EscapeDataString));
             var summaries = await Request("ISteamUser/GetPlayerSummaries/v2/", $"steamids={ids}", apiKey, ct);
+            if (!IsActive(settingsSteamId, apiKey)) return;
             foreach (var p in summaries["response"]?["players"]?.AsArray() ?? [])
             {
                 var id = Text(p?["steamid"]);
                 if (id is null) continue;
-                var state = Number(p?["personastate"]);
+                int? state = p?["personastate"] is { } stateValue ? Number(stateValue) : null;
+                if (state is null && _lastPresence.TryGetValue(id, out var previous)) state = previous.State;
                 var lastLogoff = Number(p?["lastlogoff"]);
                 friends.Add(new(id,
                     Text(p?["personaname"]) ?? "Steam user",
@@ -150,14 +210,15 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
         }
 
         var ordered = friends
-            .OrderByDescending(f => f.State > 0)
+            .OrderByDescending(f => f.State is > 0)
             .ThenByDescending(f => !string.IsNullOrWhiteSpace(f.Game))
             .ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         RecordActivity(ordered);
-        var online = ordered.Count(f => f.State > 0);
-        _snapshot = new(true, null, _friendIds.Length, online,
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), ordered, _activity.ToArray());
+        if (!IsActive(settingsSteamId, apiKey)) return;
+        var online = ordered.Count(f => f.State is > 0);
+        _published = new(new(true, null, _friendIds.Length, online,
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), ordered, _activity.ToArray()), settingsSteamId, apiKey);
     }
 
     private void RecordActivity(IReadOnlyList<SteamFriend> friends)
@@ -165,15 +226,16 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         foreach (var friend in friends)
         {
-            var current = (friend.State, friend.Game, friend.GameId);
+            if (friend.State is not int state) continue;
+            var current = (state, friend.Game, friend.GameId);
             if (_hasPresenceBaseline && _lastPresence.TryGetValue(friend.Id, out var previous))
             {
                 var changedGame = !string.IsNullOrWhiteSpace(friend.Game)
                     && (friend.Game != previous.Game || friend.GameId != previous.GameId);
                 var kind = changedGame
                     ? "playing"
-                    : previous.State == 0 && friend.State > 0 ? "online"
-                    : previous.State > 0 && friend.State == 0 ? "offline"
+                    : previous.State == 0 && state > 0 ? "online"
+                    : previous.State > 0 && state == 0 ? "offline"
                     : null;
                 if (kind is not null)
                 {
@@ -189,30 +251,62 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
     /// <summary>Fetch only an avatar URL reported by the current Steam snapshot; the phone never contacts the image CDN.</summary>
     public async Task<(byte[] Data, string Type)?> AvatarAsync(string id, CancellationToken ct)
     {
-        var cfg = config.Get();
-        if (!cfg.Steam.Enabled || !WidgetWanted(cfg) || id.Length != 17 || !id.All(char.IsAsciiDigit)) return null;
-        var url = _snapshot.Friends.FirstOrDefault(f => f.Id == id)?.Avatar;
+        var published = _published;
+        if (published.SteamId is null || published.ApiKey is null || !IsActive(published.SteamId, published.ApiKey)
+            || id.Length != 17 || !id.All(char.IsAsciiDigit)) return null;
+        var url = published.Value.Friends.FirstOrDefault(f => f.Id == id)?.Avatar
+            ?? published.Value.Activity.FirstOrDefault(e => e.Id == id)?.Avatar;
         if (url is null || !IsSafeAvatarUrl(url)) return null;
-        if (_avatars.TryGetValue(url, out var hit)) return hit;
+        long generation;
+        lock (_avatarLock)
+        {
+            generation = _avatarGeneration;
+            if (_avatars.TryGetValue(url, out var hit)) return IsActive(published.SteamId, published.ApiKey) ? hit : null;
+        }
         try
         {
-            using var response = await AvatarHttp.GetAsync(url, ct);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            using var response = await AvatarHttp.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength is > AvatarMaxBytes) return null;
             var type = response.Content.Headers.ContentType?.MediaType;
             if (type is not ("image/jpeg" or "image/png" or "image/webp" or "image/gif")) return null;
-            var data = await response.Content.ReadAsByteArrayAsync(ct);
-            if (data.Length is 0 or > AvatarMaxBytes) return null;
-            if (Interlocked.Add(ref _avatarBytes, data.Length) > AvatarCacheLimit)
+            await using var source = await response.Content.ReadAsStreamAsync(timeout.Token);
+            using var buffered = new MemoryStream(response.Content.Headers.ContentLength is long length ? (int)length : 0);
+            var chunk = new byte[81920];
+            while (true)
             {
-                _avatars.Clear();
-                Interlocked.Exchange(ref _avatarBytes, data.Length);
+                var remaining = AvatarMaxBytes + 1L - buffered.Length;
+                var read = await source.ReadAsync(chunk.AsMemory(0, (int)Math.Min(chunk.Length, remaining)), timeout.Token);
+                if (read == 0) break;
+                if (buffered.Length + read > AvatarMaxBytes) return null;
+                await buffered.WriteAsync(chunk.AsMemory(0, read), timeout.Token);
             }
-            return _avatars[url] = (data, type);
+            var data = buffered.ToArray();
+            if (data.Length is 0 or > AvatarMaxBytes || !IsActive(published.SteamId, published.ApiKey)) return null;
+            lock (_avatarLock)
+            {
+                if (generation != _avatarGeneration || !IsActive(published.SteamId, published.ApiKey)) return null;
+                if (_avatars.TryGetValue(url, out var existing)) return existing;
+                if (_avatarBytes + data.Length > AvatarCacheLimit)
+                {
+                    _avatars.Clear();
+                    _avatarBytes = 0;
+                }
+                var avatar = (data, type);
+                _avatars[url] = avatar;
+                _avatarBytes += data.Length;
+                return avatar;
+            }
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return null; }
     }
 
     private static string? SafeAvatarUrl(string? value) => IsSafeAvatarUrl(value) ? value : null;
+
+    internal static string Redact(string message, string apiKey) => string.IsNullOrEmpty(apiKey)
+        ? message : message.Replace(apiKey, "[redacted]", StringComparison.Ordinal);
 
     private static string? AvatarUrl(JsonNode? player)
     {
@@ -226,7 +320,7 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
         && (uri.Host.EndsWith(".steamstatic.com", StringComparison.OrdinalIgnoreCase)
             || uri.Host.Equals("steamcdn-a.akamaihd.net", StringComparison.OrdinalIgnoreCase));
 
-    private static async Task<string> ResolveAccountId(string input, string apiKey, CancellationToken ct)
+    internal static async Task<string> ResolveAccountId(string input, string apiKey, CancellationToken ct)
     {
         if (input.Length == 17 && input.All(char.IsAsciiDigit)) return input;
         var value = input.Trim();

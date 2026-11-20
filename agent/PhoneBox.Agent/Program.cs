@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using PhoneBox.Agent;
 
 var endpoint = AgentEndpoint.FromArgs(args);
@@ -346,14 +347,23 @@ app.MapGet("/panel/{*file}", (string? file, HttpRequest req) =>
 app.MapGet("/favicon.ico", () => AppPaths.Resource("phonebox.ico") is { } s ? Results.Stream(s, "image/x-icon") : Results.NotFound());
 
 // The version lets the settings page save only over what it loaded (X-Config-Version, see ConfigStore.Save).
-app.MapGet("/api/settings", (ConfigStore cfg, HttpResponse res) =>
+app.MapGet("/api/settings", (HttpRequest req, ConfigStore cfg, HttpResponse res) =>
 {
-    var json = JsonSerializer.Serialize(cfg.Get(), ConfigStore.WriteOpts);
+    var config = cfg.Get();
+    var json = JsonSerializer.Serialize(config, ConfigStore.WriteOpts);
+    // The phone's USB tunnel arrives on the local port with the app/device headers AgentLink adds to every request.
+    // Keep the desktop settings page's full config, but never return the Steam key in a phone response.
+    if (req.Connection.LocalPort == Port && req.Headers.ContainsKey("X-PhoneBox-Device") && req.Headers.ContainsKey("X-PhoneBox-App"))
+    {
+        var publicConfig = JsonSerializer.SerializeToNode(config, ConfigStore.WriteOpts)?.AsObject();
+        if (publicConfig?["steam"] is JsonObject steam) steam.Remove("apiKey");
+        json = publicConfig?.ToJsonString(ConfigStore.WriteOpts) ?? json;
+    }
     res.Headers["X-Config-Version"] = cfg.Version.ToString();
     return Results.Text(json, "application/json; charset=utf-8");
 });
 
-app.MapPut("/api/settings", async (HttpRequest req, ConfigStore cfg, ControlDeck deck, PhotoFrame photos, CameraFeeds cameras, ShortcutIconUploads icons, ILogger<Program> log) =>
+app.MapPut("/api/settings", async (HttpRequest req, ConfigStore cfg, ControlDeck deck, PhotoFrame photos, CameraFeeds cameras, ShortcutIconUploads icons, ILogger<Program> log, CancellationToken ct) =>
 {
     if (req.ContentType?.StartsWith("application/json") != true) return Results.StatusCode(415);
     using var r = new StreamReader(req.Body);
@@ -363,6 +373,23 @@ app.MapPut("/api/settings", async (HttpRequest req, ConfigStore cfg, ControlDeck
         return Results.BadRequest(new { error = $"Wi-Fi port cannot be the same as the local port ({Port})" });
     if (LanKeysShared(body))
         return Results.BadRequest(new { error = "The Wi-Fi key and the webhook key must be different: make a new key for one of them" });
+    AgentConfig? proposed = null;
+    try { proposed = JsonSerializer.Deserialize<AgentConfig>(body, ConfigStore.WriteOpts); }
+    catch (JsonException) { }
+    if (proposed?.Steam?.SteamId is { } profile && (profile.Length != 17 || !profile.All(char.IsAsciiDigit)))
+    {
+        if (!proposed.Steam.Enabled || !SteamMonitor.WidgetWanted(proposed))
+            return Results.BadRequest(new { error = "Add a Steam widget to an enabled page and enable Steam before saving a profile URL" });
+        if (string.IsNullOrWhiteSpace(proposed.Steam.ApiKey))
+            return Results.BadRequest(new { error = "Enter your Steam Web API key before saving a profile URL" });
+        try
+        {
+            proposed.Steam.SteamId = await SteamMonitor.ResolveAccountId(profile, proposed.Steam.ApiKey, ct);
+            body = JsonSerializer.Serialize(proposed, ConfigStore.WriteOpts);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { return Results.BadRequest(new { error = SteamMonitor.Redact(ex.Message, proposed.Steam.ApiKey) }); }
+    }
     string? err;
     long savedVersion;
     lock (IconCommit) err = cfg.Save(body, expected, out savedVersion);
@@ -596,11 +623,19 @@ app.MapPost("/api/discord/{action}", async (string action, string? channel, Disc
     await dc.ActAsync(action, channel) is { } error ? Results.BadRequest(new { error }) : Results.Ok(new { ok = true }));
 
 // Steam friends presence; the API key stays on the computer and only the public presence snapshot reaches the phone.
-app.MapGet("/api/steam", (SteamMonitor steam, ConfigStore cfg) => Results.Json(new
+app.MapGet("/api/steam", (SteamMonitor steam, ConfigStore cfg) =>
 {
-    enabled = cfg.Get().Steam.Enabled,
-    snapshot = steam.Snapshot(),
-}));
+    var current = cfg.Get();
+    var widgets = current.Widgets(enabledPagesOnly: true).ToArray();
+    var includeFriends = widgets.Any(w => w.Type == "steam");
+    var includeOffline = widgets.Any(w => w.Type == "steam" && w.Bool("offline") == true);
+    var includeActivity = widgets.Any(w => w.Type == "steam-activity");
+    return Results.Json(new
+    {
+        enabled = current.Steam.Enabled,
+        snapshot = steam.Snapshot(includeFriends, includeOffline, includeActivity),
+    });
+});
 app.MapGet("/api/steam/avatar", async (string id, SteamMonitor steam, CancellationToken ct) =>
     await steam.AvatarAsync(id, ct) is { } img
         ? Results.File(img.Data, img.Type, lastModified: null, entityTag: null, enableRangeProcessing: false) : Results.NotFound());

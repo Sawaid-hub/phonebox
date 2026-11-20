@@ -13,8 +13,10 @@ Last updated: 2026-11-15 (PhoneBox 0.9.6).
   On macOS and Linux these files are readable only by your user (0600).
 - **Discord login**: if you use the Discord widget, `discord-token.json` next to `config.json` holds the access and
   refresh token Discord gave PhoneBox (on macOS and Linux readable only by your user).
-- **Steam key**: if you use the Steam friends widget, the SteamID or profile URL and your Web API key are stored in
-  `config.json` on this computer. The key is never sent to the phone.
+- **Steam key**: the SteamID64 and Web API key are stored in `config.json` on this computer. A custom profile name is
+  sent to Steam once when you save it, then only the SteamID64 is stored. The key is never sent to the phone or logged.
+  The activity widget derives its short history from successive polls in memory; it is not written to disk or logged and
+  starts empty after an agent restart.
 - **Last Claude quota reading**: `claude-quota.json` next to the log (usage percentages and reset times, no token),
   so the panel can show the last values after a restart, and `claude-quota-schedule.json` (when the next check may
   run, the last error message and, after Anthropic refused a token, a 16-character hash of that token, never the token
@@ -83,6 +85,8 @@ identifies your GitHub account to GitHub.
 | Feature | Where | What is sent |
 |---|---|---|
 | Discord widget | `discord.com/api/oauth2/token`, once at login and when the token needs renewing; `cdn.discordapp.com`, once per server icon and avatar shown (the agent fetches them, the phone never contacts Discord; the rest goes through the Discord app on this PC, locally). Turn off in **Settings › General › Discord** | The application's client ID and secret, and the one-time login code or the saved refresh token; for images only the image's id and hash, which Discord already knows |
+| Steam friends and activity | `api.steampowered.com`, only while Steam is enabled and an enabled page contains either widget. Clear the API key, turn off Steam, or remove both widgets to stop requests | The API key in the request header; your SteamID64 for the friend-list request; your custom profile name as `vanityurl` only when you save it; and friend SteamIDs in player-summary batches. Steam returns names, avatars, presence and public game details. The activity list is built from successive polls and stays in memory only |
+| Steam avatars | `*.steamstatic.com` and `steamcdn-a.akamaihd.net`, only when the agent fetches an avatar shown by either widget. Clear the API key, turn off Steam, or remove both widgets to stop requests | A request to the avatar URL Steam returned (including its image hash); the Web API key and SteamID64 are not sent to these image hosts |
 | GitHub widget | `api.github.com`, through your own GitHub CLI (`gh`) | Whatever `gh` sends with its own sign-in |
 | Hacker News widget (phone) | `hacker-news.firebaseio.com` | Nothing but the request |
 | Exchange rates widget (phone) | `api.frankfurter.dev` | The currencies you chose |
