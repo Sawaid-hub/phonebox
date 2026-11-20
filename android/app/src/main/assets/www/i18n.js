@@ -8191,6 +8191,105 @@
     },
   };
 
+  // Widget catalog entries are keyed by their English source text. Keep Steam's new names, descriptions and option
+  // label translated in every supported language just like the panel and settings strings above.
+  const STEAM_CATALOG = {
+    en: {
+      'Steam friends': 'Steam friends',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).",
+      'Show offline friends': 'Show offline friends',
+      'Steam friend activity': 'Steam friend activity',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': 'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.',
+    },
+    tr: {
+      'Steam friends': 'Steam arkadaşları',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": 'Arkadaşlarının avatarlarını, çevrimiçi durumunu, son görülme zamanını ve oynadığı oyunu gör (Steam Web API anahtarı gerekir; bkz. docs/STEAM.md).',
+      'Show offline friends': 'Çevrimdışı arkadaşları göster',
+      'Steam friend activity': 'Steam arkadaş etkinliği',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': 'Arkadaşların çevrimiçi olduğunda, oyun oynamaya başladığında veya çevrimdışı olduğunda gelen son bildirimler. Herkese açık Web API üzerinden Steam sohbet mesajları alınamaz.',
+    },
+    de: {
+      'Steam friends': 'Steam-Freunde',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": 'Avatare, Online-Status, letzte Aktivität und aktuelles Spiel deiner Freunde sehen (Steam-Web-API-Schlüssel erforderlich; siehe docs/STEAM.md).',
+      'Show offline friends': 'Offline-Freunde anzeigen',
+      'Steam friend activity': 'Steam-Freundesaktivität',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': 'Aktuelle Meldungen, wenn Freunde online kommen, ein Spiel starten oder offline gehen. Steam-Chats sind über die öffentliche Web-API nicht verfügbar.',
+    },
+    fr: {
+      'Steam friends': 'Amis Steam',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": 'Voir les avatars, le statut en ligne, la dernière activité et le jeu en cours de vos amis (clé Steam Web API requise ; voir docs/STEAM.md).',
+      'Show offline friends': 'Afficher les amis hors ligne',
+      'Steam friend activity': 'Activité des amis Steam',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': 'Alertes récentes lorsque vos amis se connectent, commencent à jouer ou se déconnectent. Les messages Steam ne sont pas accessibles via l’API Web publique.',
+    },
+    es: {
+      'Steam friends': 'Amigos de Steam',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": 'Consulta los avatares, el estado en línea, la última vez que se vieron y el juego actual de tus amigos (requiere una clave de Steam Web API; consulta docs/STEAM.md).',
+      'Show offline friends': 'Mostrar amigos desconectados',
+      'Steam friend activity': 'Actividad de amigos de Steam',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': 'Alertas recientes cuando tus amigos se conectan, empiezan a jugar o se desconectan. Los mensajes de Steam no están disponibles en la Web API pública.',
+    },
+    it: {
+      'Steam friends': 'Amici di Steam',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": 'Visualizza avatar, stato online, ultima attività e gioco attuale dei tuoi amici (serve una chiave Steam Web API; vedi docs/STEAM.md).',
+      'Show offline friends': 'Mostra gli amici offline',
+      'Steam friend activity': 'Attività degli amici Steam',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': 'Avvisi recenti quando gli amici vanno online, iniziano a giocare o vanno offline. I messaggi di Steam non sono disponibili tramite la Web API pubblica.',
+    },
+    pt: {
+      'Steam friends': 'Amigos do Steam',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": 'Veja os avatares, o estado online, a última atividade e o jogo atual dos seus amigos (requer uma chave Steam Web API; consulte docs/STEAM.md).',
+      'Show offline friends': 'Mostrar amigos offline',
+      'Steam friend activity': 'Atividade dos amigos do Steam',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': 'Alertas recentes quando os amigos ficam online, começam a jogar ou ficam offline. As mensagens do Steam não estão disponíveis na Web API pública.',
+    },
+    nl: {
+      'Steam friends': 'Steam-vrienden',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": 'Bekijk avatars, onlinestatus, laatst gezien en het huidige spel van vrienden (Steam Web API-sleutel vereist; zie docs/STEAM.md).',
+      'Show offline friends': 'Offline vrienden tonen',
+      'Steam friend activity': 'Steam-vriendenactiviteit',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': 'Recente meldingen wanneer vrienden online komen, beginnen te spelen of offline gaan. Steam-chatberichten zijn niet beschikbaar via de openbare Web API.',
+    },
+    pl: {
+      'Steam friends': 'Znajomi ze Steam',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": 'Zobacz awatary znajomych, ich status online, ostatnią aktywność i aktualną grę (wymaga klucza Steam Web API; zobacz docs/STEAM.md).',
+      'Show offline friends': 'Pokaż znajomych offline',
+      'Steam friend activity': 'Aktywność znajomych ze Steam',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': 'Najnowsze powiadomienia o tym, że znajomi są online, zaczynają grać lub przechodzą offline. Wiadomości ze Steam nie są dostępne w publicznym Web API.',
+    },
+    ru: {
+      'Steam friends': 'Друзья Steam',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": 'Аватары друзей, статус в сети, время последней активности и текущая игра (нужен ключ Steam Web API; см. docs/STEAM.md).',
+      'Show offline friends': 'Показывать друзей не в сети',
+      'Steam friend activity': 'Активность друзей Steam',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': 'Недавние уведомления о том, что друзья появились в сети, начали играть или вышли из сети. Сообщения Steam недоступны через публичный Web API.',
+    },
+    el: {
+      'Steam friends': 'Φίλοι στο Steam',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": 'Δες τα avatar, την κατάσταση σύνδεσης, την τελευταία παρουσία και το τρέχον παιχνίδι των φίλων σου (απαιτείται κλειδί Steam Web API· δες docs/STEAM.md).',
+      'Show offline friends': 'Εμφάνιση φίλων εκτός σύνδεσης',
+      'Steam friend activity': 'Δραστηριότητα φίλων Steam',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': 'Πρόσφατες ειδοποιήσεις όταν φίλοι συνδέονται, αρχίζουν να παίζουν ή αποσυνδέονται. Τα μηνύματα συνομιλίας Steam δεν είναι διαθέσιμα από το δημόσιο Web API.',
+    },
+    vi: {
+      'Steam friends': 'Bạn bè trên Steam',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": 'Xem ảnh đại diện, trạng thái trực tuyến, lần hoạt động gần nhất và trò chơi hiện tại của bạn bè (cần khóa Steam Web API; xem docs/STEAM.md).',
+      'Show offline friends': 'Hiển thị bạn bè ngoại tuyến',
+      'Steam friend activity': 'Hoạt động bạn bè trên Steam',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': 'Thông báo gần đây khi bạn bè trực tuyến, bắt đầu chơi hoặc ngoại tuyến. Web API công khai không cung cấp tin nhắn trò chuyện Steam.',
+    },
+    zh: {
+      'Steam friends': 'Steam 好友',
+      "See friends' avatars, online state, last seen time and current game (needs a Steam Web API key; see docs/STEAM.md).": '查看好友头像、在线状态、上次活跃时间和当前游戏（需要 Steam Web API 密钥；参见 docs/STEAM.md）。',
+      'Show offline friends': '显示离线好友',
+      'Steam friend activity': 'Steam 好友动态',
+      'Recent alerts when friends come online, start playing or go offline. Steam chat messages are not available from the public Web API.': '好友上线、开始游戏或下线时的近期提醒。公开 Web API 不提供 Steam 聊天消息。',
+    },
+  };
+  for (const [lang, entries] of Object.entries(STEAM_CATALOG)) {
+    Object.assign(CATALOG[lang] ||= {}, entries);
+  }
+
   let pref = 'auto';
   let active = 'en';
 

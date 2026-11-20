@@ -351,9 +351,14 @@ app.MapGet("/api/settings", (HttpRequest req, ConfigStore cfg, HttpResponse res)
 {
     var config = cfg.Get();
     var json = JsonSerializer.Serialize(config, ConfigStore.WriteOpts);
-    // The phone's USB tunnel arrives on the local port with the app/device headers AgentLink adds to every request.
-    // Keep the desktop settings page's full config, but never return the Steam key in a phone response.
-    if (req.Connection.LocalPort == Port && req.Headers.ContainsKey("X-PhoneBox-Device") && req.Headers.ContainsKey("X-PhoneBox-App"))
+    // Only a same-origin browser fetch from the desktop settings page gets credentials. The phone's native USB proxy
+    // does not send Fetch Metadata headers; redact for every other request on the local port, including callers that
+    // omit the phone headers or try to supply them themselves.
+    var desktopSettingsFetch = req.HttpContext.Connection.LocalPort == Port
+        && req.Headers["Sec-Fetch-Site"] == "same-origin"
+        && req.Headers["Sec-Fetch-Mode"] == "cors"
+        && req.Headers["Sec-Fetch-Dest"] == "empty";
+    if (req.HttpContext.Connection.LocalPort == Port && !desktopSettingsFetch)
     {
         var publicConfig = JsonSerializer.SerializeToNode(config, ConfigStore.WriteOpts)?.AsObject();
         if (publicConfig?["steam"] is JsonObject steam) steam.Remove("apiKey");
@@ -374,21 +379,25 @@ app.MapPut("/api/settings", async (HttpRequest req, ConfigStore cfg, ControlDeck
     if (LanKeysShared(body))
         return Results.BadRequest(new { error = "The Wi-Fi key and the webhook key must be different: make a new key for one of them" });
     AgentConfig? proposed = null;
-    try { proposed = JsonSerializer.Deserialize<AgentConfig>(body, ConfigStore.WriteOpts); }
+    try { proposed = JsonSerializer.Deserialize<AgentConfig>(body, ConfigStore.ReadOpts); }
     catch (JsonException) { }
-    if (proposed?.Steam?.SteamId is { } profile && (profile.Length != 17 || !profile.All(char.IsAsciiDigit)))
+    if (proposed?.Steam is { } steam)
     {
-        if (!proposed.Steam.Enabled || !SteamMonitor.WidgetWanted(proposed))
-            return Results.BadRequest(new { error = "Add a Steam widget to an enabled page and enable Steam before saving a profile URL" });
-        if (string.IsNullOrWhiteSpace(proposed.Steam.ApiKey))
-            return Results.BadRequest(new { error = "Enter your Steam Web API key before saving a profile URL" });
-        try
+        steam.SteamId = string.IsNullOrWhiteSpace(steam.SteamId) ? null : steam.SteamId.Trim();
+        if (steam.SteamId is { } profile && (profile.Length != 17 || !profile.All(char.IsAsciiDigit)))
         {
-            proposed.Steam.SteamId = await SteamMonitor.ResolveAccountId(profile, proposed.Steam.ApiKey, ct);
-            body = JsonSerializer.Serialize(proposed, ConfigStore.WriteOpts);
+            if (!steam.Enabled || !SteamMonitor.WidgetWanted(proposed))
+                return Results.BadRequest(new { error = "Add a Steam widget to an enabled page and enable Steam before saving a profile URL" });
+            if (string.IsNullOrWhiteSpace(steam.ApiKey))
+                return Results.BadRequest(new { error = "Enter your Steam Web API key before saving a profile URL" });
+            try
+            {
+                steam.SteamId = await SteamMonitor.ResolveAccountId(profile, steam.ApiKey, ct);
+                body = JsonSerializer.Serialize(proposed, ConfigStore.WriteOpts);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { return Results.BadRequest(new { error = SteamMonitor.Redact(ex.Message, steam.ApiKey) }); }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception ex) { return Results.BadRequest(new { error = SteamMonitor.Redact(ex.Message, proposed.Steam.ApiKey) }); }
     }
     string? err;
     long savedVersion;

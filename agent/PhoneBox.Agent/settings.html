@@ -644,7 +644,7 @@ nav a.on::before { color: var(--accent); }
         <div class="row" style="margin-bottom:8px"><label class="switch"><input type="checkbox" data-bind="steam.enabled" aria-labelledby="steamEnabledLabel"><span></span></label> <span id="steamEnabledLabel" data-i18n="s.steam.enable">Connect Steam (for the Steam friends widget)</span></div>
         <p class="hint" style="margin:0 0 12px" data-i18n="s.steam.hint">Create a user Web API key at steamcommunity.com/dev/apikey and enter your SteamID64 or profile URL. Custom profile names are resolved when saved; only the SteamID64 is stored. Your profile's friend list must be visible to this API key for GetFriendList; make Game details public to show games. The key stays on this computer. Step by step: docs/STEAM.md.</p>
         <div class="grid2">
-          <div class="field"><label for="steamProfileInput" data-i18n="s.steam.id">SteamID64 or profile URL</label><input id="steamProfileInput" type="text" data-bind="steam.steamId" autocomplete="off" spellcheck="false" placeholder="7656119… or profile link"></div>
+          <div class="field"><label for="steamProfileInput" data-i18n="s.steam.id">SteamID64 or profile URL</label><input id="steamProfileInput" type="text" data-bind="steam.steamId" autocomplete="off" spellcheck="false" placeholder="76561198000000000"></div>
           <div class="field"><label for="steamApiKeyInput" data-i18n="s.steam.key">User Web API key</label><input id="steamApiKeyInput" type="password" data-bind="steam.apiKey" autocomplete="off"></div>
         </div>
       </div>

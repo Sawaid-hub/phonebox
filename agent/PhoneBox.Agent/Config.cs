@@ -420,7 +420,7 @@ public sealed partial class ConfigStore(string path)
     /// <summary>Pages a fresh install (or an empty page list) starts with.</summary>
     public static readonly string[] DefaultPages = ["home", "ai", "work", "system", "procs", "deck"];
 
-    private static readonly JsonSerializerOptions ReadOpts = new()
+    public static readonly JsonSerializerOptions ReadOpts = new()
     {
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
