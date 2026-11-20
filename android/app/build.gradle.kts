@@ -38,13 +38,6 @@ android {
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
-        create("development") {
-            initWith(getByName("debug"))
-            applicationIdSuffix = ".dev"
-            versionNameSuffix = "-dev"
-            manifestPlaceholders["appLabel"] = "PhoneBox Dev"
-            matchingFallbacks += listOf("debug")
-        }
     }
 
     buildFeatures {
