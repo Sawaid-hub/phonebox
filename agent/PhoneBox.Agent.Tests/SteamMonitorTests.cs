@@ -123,6 +123,10 @@ public class SteamMonitorTests
         Assert.Equal(TimeSpan.FromMinutes(8), SteamMonitor.RateLimitDelay(4, null));
         Assert.Equal(TimeSpan.FromMinutes(15), SteamMonitor.RateLimitDelay(5, null));
         Assert.Equal(TimeSpan.FromMinutes(15), SteamMonitor.RateLimitDelay(1, TimeSpan.FromHours(1)));
+        // a Retry-After shorter than the back-off (0, or a date already past) never makes it ask sooner
+        Assert.Equal(TimeSpan.FromMinutes(1), SteamMonitor.RateLimitDelay(1, TimeSpan.Zero));
+        Assert.Equal(TimeSpan.FromMinutes(4), SteamMonitor.RateLimitDelay(3, TimeSpan.FromSeconds(30)));
+        Assert.Equal(TimeSpan.FromMinutes(10), SteamMonitor.RateLimitDelay(1, TimeSpan.FromMinutes(10)));
         var headerDelay = SteamMonitor.RetryAfterDelay(new RetryConditionHeaderValue(TimeSpan.FromSeconds(45)), DateTimeOffset.UtcNow);
         Assert.Equal(TimeSpan.FromSeconds(45), headerDelay);
         Assert.Equal("Steam returned an unreadable response.", SteamMonitor.UserError(new JsonException("parser internals")));

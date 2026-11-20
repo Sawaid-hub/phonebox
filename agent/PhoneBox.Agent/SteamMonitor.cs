@@ -457,11 +457,15 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
         return delay is null ? null : ClampRetryDelay(delay.Value);
     }
 
+    /// <summary>
+    /// The wait after a 429: the exponential back-off, or Steam's Retry-After when that is longer (up to 15 minutes). A
+    /// Retry-After of 0, or a date already past on a clock that runs ahead, never makes the agent ask sooner.
+    /// </summary>
     internal static TimeSpan RateLimitDelay(int failures, TimeSpan? retryAfter)
     {
-        if (retryAfter is { } requested) return ClampRetryDelay(requested);
         var exponent = Math.Clamp(failures - 1, 0, 4);
-        return TimeSpan.FromMinutes(Math.Min(1 << exponent, 15));
+        var backoff = TimeSpan.FromMinutes(Math.Min(1 << exponent, 15));
+        return retryAfter is { } requested && ClampRetryDelay(requested) > backoff ? ClampRetryDelay(requested) : backoff;
     }
 
     private static TimeSpan ClampRetryDelay(TimeSpan delay) =>
