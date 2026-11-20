@@ -581,10 +581,10 @@
     if (path === '/api/steam') return json({ enabled: true, snapshot: {
       connected: true, error: null, totalFriends: 2, onlineCount: 1, updated: now(),
       friends: [
-        { id: '76561198000000001', name: 'Ada', state: 1, game: 'Hades II', gameId: '1145350', avatar: 'https://avatars.steamstatic.com/demo-ada.jpg', lastLogoff: null },
-        { id: '76561198000000002', name: 'Linus', state: 0, game: null, gameId: null, avatar: 'https://avatars.steamstatic.com/demo-linus.jpg', lastLogoff: Math.floor(now() / 1000) - 7200 },
+        { id: '76561198000000001', name: 'Ada', state: 1, game: 'Hades II', hasAvatar: true, lastLogoff: null },
+        { id: '76561198000000002', name: 'Linus', state: 0, game: null, hasAvatar: true, lastLogoff: Math.floor(now() / 1000) - 7200 },
       ],
-      activity: [{ id: '76561198000000001', name: 'Ada', avatar: 'https://avatars.steamstatic.com/demo-ada.jpg', kind: 'playing', game: 'Hades II', at: now() - 180000 }],
+      activity: [{ id: '76561198000000001', name: 'Ada', hasAvatar: true, kind: 'playing', game: 'Hades II', at: now() - 180000 }],
     } });
     if (path === '/api/steam/avatar') {
       const ada = q.get('id') === '76561198000000001';

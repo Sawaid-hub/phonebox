@@ -435,6 +435,14 @@ public sealed partial class ConfigStore(string path)
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
+    /// <summary>Retain a secret redacted from settings GETs when a client sends it back as missing or null.</summary>
+    internal static bool PreserveSteamApiKey(AgentConfig? proposed, string? storedKey)
+    {
+        if (proposed?.Steam is not { ApiKey: null } steam || storedKey is null) return false;
+        steam.ApiKey = storedKey;
+        return true;
+    }
+
     private readonly Lock _lock = new();
     private AgentConfig _config = Normalize(new AgentConfig());
     private DateTime _stamp = DateTime.MinValue;

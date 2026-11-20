@@ -8,14 +8,15 @@ fetches Steam data and avatar images; the phone never receives your API key or c
 
 1. Create a standard user Web API key at the [Steam API registration page](https://steamcommunity.com/dev/apikey).
    If Steam asks for a domain, enter `localhost` for this local integration.
-2. In PhoneBox settings, open **General › Steam**. Turn on **Connect Steam**, enter the key, and enter either your
+2. Add a **Steam friends** widget to an enabled page. Add **Steam friend activity** too if you want a feed of presence
+   changes. A profile URL can only be saved after Steam is enabled and one of these widgets is on an enabled page.
+3. In PhoneBox settings, open **General › Steam**. Turn on **Connect Steam**, enter the key, and enter either your
    SteamID64 or the URL of your Steam profile. Steam profile links using a custom name (for example
    `https://steamcommunity.com/id/your-name`) are resolved when you save; only the SteamID64 is stored.
-3. Set your Steam **Friend List** privacy to **Public**. Set **Game details** to **Public** if you want game titles to
+4. Set your Steam **Friend List** privacy to **Public**. Set **Game details** to **Public** if you want game titles to
    appear. Steam does not return a private friend list through its `GetFriendList` API.
-4. Add a **Steam friends** widget to an enabled page. It shows online friends by default; turn on **Show offline
-   friends** in the widget options to include offline friends too (at most 50 offline friends are sent to the phone).
-   Add **Steam friend activity** if you also want a feed of presence changes.
+5. In the Steam friends widget, online friends are shown by default; turn on **Show offline friends** in the widget
+   options to include offline friends too (at most 50 offline friends are sent to the phone).
 
 The agent refreshes presence about once a minute and refreshes the friend list every 15 minutes, only while an enabled
 page contains either widget. It uses Steam's `GetFriendList`, `GetPlayerSummaries` (in batches of up to 100), and

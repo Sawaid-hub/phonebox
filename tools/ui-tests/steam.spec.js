@@ -3,11 +3,14 @@ const { test, expect } = require('@playwright/test');
 test('Steam friends show avatars, presence, last seen, and recent activity', async ({ page }) => {
   const errors = [];
   page.on('pageerror', (error) => errors.push(String(error)));
-  await page.route('**/agent/api/steam/avatar?id=*', (route) => route.fulfill({
-    status: 200,
-    contentType: 'image/svg+xml',
-    body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><circle cx=".5" cy=".5" r=".5"/></svg>',
-  }));
+  await page.addInitScript(() => {
+    const create = URL.createObjectURL.bind(URL);
+    window.__steamAvatarUrlCount = 0;
+    URL.createObjectURL = (...args) => {
+      window.__steamAvatarUrlCount++;
+      return create(...args);
+    };
+  });
   await page.goto('/panel/');
   await page.evaluate(() => {
     const cfg = JSON.parse(localStorage.getItem('pb-demo-config') || 'null') || {};
@@ -36,5 +39,7 @@ test('Steam friends show avatars, presence, last seen, and recent activity', asy
   await expect(activity.locator('.st-event')).toHaveCount(1);
   await expect(activity.locator('.st-event .st-name')).toHaveText('Ada');
   await expect(activity.locator('.st-event .st-sub')).toHaveText('Started playing Hades II');
+  await expect(activity.locator('.st-avatar')).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => window.__steamAvatarUrlCount)).toBe(2);
   expect(errors).toEqual([]);
 });

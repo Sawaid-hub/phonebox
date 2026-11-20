@@ -381,6 +381,10 @@ app.MapPut("/api/settings", async (HttpRequest req, ConfigStore cfg, ControlDeck
     AgentConfig? proposed = null;
     try { proposed = JsonSerializer.Deserialize<AgentConfig>(body, ConfigStore.ReadOpts); }
     catch (JsonException) { }
+    // /api/settings redacts Steam's key for callers that are not the same-origin desktop page.
+    // Keep the configured secret if that redacted (or older) client sends it back as missing/null.
+    if (ConfigStore.PreserveSteamApiKey(proposed, cfg.Get().Steam.ApiKey))
+        body = JsonSerializer.Serialize(proposed, ConfigStore.WriteOpts);
     if (proposed?.Steam is { } steam)
     {
         steam.SteamId = string.IsNullOrWhiteSpace(steam.SteamId) ? null : steam.SteamId.Trim();
@@ -396,7 +400,7 @@ app.MapPut("/api/settings", async (HttpRequest req, ConfigStore cfg, ControlDeck
                 body = JsonSerializer.Serialize(proposed, ConfigStore.WriteOpts);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception ex) { return Results.BadRequest(new { error = SteamMonitor.Redact(ex.Message, steam.ApiKey) }); }
+            catch (Exception ex) { return Results.BadRequest(new { error = SteamMonitor.Redact(SteamMonitor.UserError(ex), steam.ApiKey) }); }
         }
     }
     string? err;
