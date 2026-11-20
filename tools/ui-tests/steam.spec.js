@@ -150,12 +150,18 @@ test('Steam avatar retry is canceled after its portrait is removed', async ({ pa
   await page.addInitScript(() => {
     const setTimeout = window.setTimeout.bind(window);
     window.__steamAvatarShortenedRetries = [];
+    window.__steamAvatarRetryCallbacksRunAt = [];
+    window.__steamPortraitsRemoved = false;
     window.setTimeout = (callback, delay, ...args) => {
       const shouldShorten = localStorage.getItem('pb-test-steam-fast-retry') === '1'
         && delay >= 59_900 && delay <= 60_100;
       if (shouldShorten) window.__steamAvatarShortenedRetries.push(delay);
       const shortened = shouldShorten ? 800 : delay;
-      return setTimeout(callback, shortened, ...args);
+      if (!shouldShorten) return setTimeout(callback, shortened, ...args);
+      return setTimeout(() => {
+        window.__steamAvatarRetryCallbacksRunAt.push({ at: Date.now(), afterRemoval: window.__steamPortraitsRemoved });
+        callback(...args);
+      }, shortened);
     };
   });
   await configureSteamFriends(page, 'pb-test-steam-fast-retry');
@@ -163,7 +169,11 @@ test('Steam avatar retry is canceled after its portrait is removed', async ({ pa
   await expect(page.locator('.w-steam .st-row')).toHaveCount(2);
   await expect.poll(() => page.evaluate(() => window.__steamAvatarRequests)).toBe(2);
   await expect.poll(() => page.evaluate(() => window.__steamAvatarShortenedRetries.length)).toBe(2);
-  await page.locator('.st-portrait[data-steam-id]').evaluateAll((roots) => roots.forEach((root) => root.remove()));
+  await page.locator('.st-portrait[data-steam-id]').evaluateAll((roots) => {
+    window.__steamPortraitsRemoved = true;
+    roots.forEach((root) => root.remove());
+  });
   await page.waitForTimeout(900);
-  expect(await page.evaluate(() => window.__steamAvatarRequests)).toBe(2);
+  const retryRuns = await page.evaluate(() => window.__steamAvatarRetryCallbacksRunAt);
+  expect(retryRuns.filter((run) => run.afterRemoval)).toEqual([]);
 });

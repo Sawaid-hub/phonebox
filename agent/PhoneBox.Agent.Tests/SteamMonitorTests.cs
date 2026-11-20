@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using PhoneBox.Agent;
 using Xunit;
 
@@ -93,6 +94,26 @@ public class SteamMonitorTests
     }
 
     [Fact]
+    public void MissingPresenceDoesNotCarryForwardLastKnownOnlineState()
+    {
+        var knownState = SteamMonitor.PresenceState(JsonNode.Parse("""{"personastate":1}"""));
+        var missingState = SteamMonitor.PresenceState(JsonNode.Parse("{}"));
+        Assert.Equal(1, knownState);
+        Assert.Null(missingState);
+
+        var knownFriend = Friend(1, knownState);
+        var currentFriend = knownFriend with { State = missingState };
+        var presence = new Dictionary<string, (int State, string? Game, string? GameId)>(StringComparer.Ordinal);
+        var events = new List<SteamActivityEvent>();
+        SteamMonitor.RecordActivity([knownFriend], presence, events, hasPresenceBaseline: false, now: 1);
+        SteamMonitor.RecordActivity([currentFriend], presence, events, hasPresenceBaseline: true, now: 2);
+
+        Assert.Equal(0, SteamMonitor.CountOnline([currentFriend]));
+        Assert.Empty(events);
+        Assert.Equal(1, presence[knownFriend.Id].State);
+    }
+
+    [Fact]
     public void ForbiddenAndRateLimitResponsesHaveSafeMessagesAndBoundedBackoff()
     {
         var forbidden = SteamMonitor.ApiStatusError(HttpStatusCode.Forbidden, "ISteamUser/GetFriendList/v1/");
@@ -108,6 +129,6 @@ public class SteamMonitorTests
         Assert.Equal("Steam did not respond in time. Try again later.", SteamMonitor.UserError(new TaskCanceledException("client timeout internals")));
     }
 
-    private static SteamFriend Friend(int id, int state) => new(
+    private static SteamFriend Friend(int id, int? state) => new(
         (76561198000000000L + id).ToString(), $"Friend {id}", state, null, null, null, null);
 }

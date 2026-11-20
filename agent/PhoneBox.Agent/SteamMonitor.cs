@@ -251,8 +251,7 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
             {
                 var id = Text(p?["steamid"]);
                 if (id is null) continue;
-                int? state = p?["personastate"] is { } stateValue ? Number(stateValue) : null;
-                if (state is null && _lastPresence.TryGetValue(id, out var previous)) state = previous.State;
+                var state = PresenceState(p);
                 var lastLogoff = Number(p?["lastlogoff"]);
                 friends.Add(new(id,
                     Text(p?["personaname"]) ?? "",
@@ -272,7 +271,7 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
         _hasPresenceBaseline = RecordActivity(ordered, _lastPresence, _activity, _hasPresenceBaseline,
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         if (!IsActive(settingsSteamId, apiKey)) return;
-        var online = ordered.Count(f => f.State is > 0);
+        var online = CountOnline(ordered);
         _published = new(new(true, null, _friendIds.Length, online,
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), ordered, _activity.ToArray()), settingsSteamId, apiKey);
     }
@@ -304,6 +303,12 @@ public sealed class SteamMonitor(ConfigStore config, ILogger<SteamMonitor> log) 
         }
         return true;
     }
+
+    internal static int? PresenceState(JsonNode? player) =>
+        player?["personastate"] is { } value ? Number(value) : null;
+
+    internal static int CountOnline(IReadOnlyList<SteamFriend> friends) =>
+        friends.Count(friend => friend.State is > 0);
 
     /// <summary>Fetch only an avatar URL reported by the current Steam snapshot; the phone never contacts the image CDN.</summary>
     public async Task<(byte[] Data, string Type)?> AvatarAsync(string id, CancellationToken ct)
