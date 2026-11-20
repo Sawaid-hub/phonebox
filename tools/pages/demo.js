@@ -61,7 +61,7 @@
       night: { enabled: false, start: '00:30', end: '07:30', brightness: 0.02 },
       display: { appearance: null, showSeconds: true, hour12: false, idleReturnSec: 0, vibrate: true, volumeKeys: true, orientation: 'landscape', theme: 'default', accent: '#2dd4bf',
         pixelShift: false, idleDimMin: 0,
-        artTint: true, autoBrightness: false, nightWhenDark: false, proximityWake: true, pin: false, homeScreen: false, keepAwake: true, followComputerLock: false,
+        artTint: true, autoBrightness: false, nightWhenDark: false, proximityWake: true, pin: false, homeScreen: false, keepAwake: true, openOnConnect: true, followComputerLock: false,
         homePage: null, switchCountdownSec: 3, touchGraceSec: 20, minDwellSec: 15, holdMaxMin: 30 },
       lan: { enabled: true, port: 8766, token: 'demo', webhookToken: 'demo-webhook-key' },
       updates: { auto: true, repo: 'ersinkoc/phonebox' },
@@ -115,7 +115,7 @@
       // iconRev / iconUpload: the agent sets them when a shortcut has a picture (and when the user uploaded it). The demo
       // has no uploads and serves no /agent/api/shortcuts/icon, so a config that sets them also needs that image mocked
       // (see button-cover.spec.js); without one the key keeps its emoji.
-      shortcuts: (c.shortcuts || []).map(({ id, label, icon, color, toggle, cmd, iconRev, iconUpload }) => ({ id, label, icon, color, toggle: !!toggle || cmd === 'builtin:mute', iconRev: iconRev ?? null, iconUpload: iconUpload === true })),
+      shortcuts: (c.shortcuts || []).map(({ id, label, icon, color, toggle, cmd, longPress, iconRev, iconUpload }) => ({ id, label, icon, color, toggle: !!toggle || cmd === 'builtin:mute', hold: !!longPress && longPress !== id && (c.shortcuts || []).some((x) => x.id === longPress), iconRev: iconRev ?? null, iconUpload: iconUpload === true })),
       rules: (c.rules || []).map(({ id, name, enabled, when }) => ({ id, name, enabled: enabled !== false, when })),
       charge: { enabled: !!c.charge?.enabled, min: c.charge?.min ?? 50, max: c.charge?.max ?? 80 },
     };
@@ -544,10 +544,13 @@
     }
     if (path.startsWith('/api/run/') && method === 'POST') {
       // on / off keys flip in the demo; the mute key mutes the made-up computer
-      const id = decodeURIComponent(path.slice(9)), sc = (await config()).shortcuts.find((s) => s.id === id);
+      const id = decodeURIComponent(path.slice(9)), shortcuts = (await config()).shortcuts;
+      let sc = shortcuts.find((s) => s.id === id);
+      // ?hold=true runs the key's long-press shortcut instead (the agent resolves it; the phone sends only the held key's id)
+      if (sc && q.get('hold') === 'true') sc = sc.longPress && sc.longPress !== sc.id ? shortcuts.find((s) => s.id === sc.longPress) : null;
       if (!sc) return json({ title: 'An error occurred while processing your request.', status: 500, detail: 'unknown shortcut' }, 500);
       if (sc.cmd === 'builtin:mute') audio.muted = !audio.muted;
-      else if (sc.toggle) toggles[id] = !toggles[id];
+      else if (sc.toggle) toggles[sc.id] = !toggles[sc.id];
       return json({});
     }
     if (path === '/api/quotas') return json(quotas());

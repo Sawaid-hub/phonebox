@@ -71,7 +71,7 @@ W.batteries = {
         return row;
       }));
     };
-    const tick = every(30_000, async () => { await load(); render(); });
+    const tick = every(20_000, async () => { await load(); render(); });
     return { update: () => { tick(); render(); } };
   },
 };

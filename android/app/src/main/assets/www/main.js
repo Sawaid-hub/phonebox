@@ -147,6 +147,37 @@ export async function api(path, method = 'GET', timeout = 2500) {
 
 export const haptic = () => { try { bridge && bridge.haptic(); } catch (_) {} };
 export const buzz = (p) => { try { if (bridge && !nightOn && cfg.display?.vibrate !== false) bridge.buzz(p); } catch (_) {} };
+// One AudioContext for the whole panel: Chrome limits how many can be open, so a new one per chime would run out.
+let chimeCtx = null;
+/**
+ * A short tone for timers, made with Web Audio so the app needs no sound file. Silent on the night screen, like
+ * buzz(). volume is a percentage (10–100); finished plays a rising three-note pattern instead of two beeps.
+ */
+export const chime = (volume, finished = false) => {
+  try {
+    if (nightOn) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!chimeCtx) chimeCtx = new Ctx();
+    // a context made without a tap starts suspended in a desktop browser; the phone's WebView allows playback
+    if (chimeCtx.state === 'suspended') { const r = chimeCtx.resume(); if (r && r.catch) r.catch(() => {}); }
+    const peak = 0.4 * Math.min(100, Math.max(10, +volume || 60)) / 100; // below 1, so two notes never clip
+    const notes = finished ? [660, 880, 1100] : [880, 880];
+    const t0 = chimeCtx.currentTime + 0.02;
+    notes.forEach((freq, i) => {
+      const at = t0 + i * 0.25, osc = chimeCtx.createOscillator(), gain = chimeCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, at);
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.linearRampToValueAtTime(peak, at + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.22); // a quick fade-out, no click at the end
+      osc.connect(gain);
+      gain.connect(chimeCtx.destination);
+      osc.start(at);
+      osc.stop(at + 0.24);
+    });
+  } catch (_) {}
+};
 export const transport = () => { try { return bridge ? bridge.transport() : ''; } catch (_) { return ''; } };
 
 /** h('div', 'cls', child, 'text', [more]) */
@@ -677,12 +708,13 @@ export function renderStatus(el, o = {}) {
 }
 
 // ---------------------------------------------------------------- shortcuts
-export async function runShortcut(btn, id) {
+export async function runShortcut(btn, id, hold = false) {
   haptic();
   btn.classList.remove('ok', 'err');
   btn.classList.add('busy');
   let ok = false;
-  try { await api('/run/' + encodeURIComponent(id), 'POST', 5000); ok = true; } catch (_) {}
+  // hold: the agent runs the key's own long-press shortcut; the phone still sends only this key's id
+  try { await api('/run/' + encodeURIComponent(id) + (hold ? '?hold=true' : ''), 'POST', 5000); ok = true; } catch (_) {}
   btn.classList.remove('busy');
   btn.classList.add(ok ? 'ok' : 'err');
   setTimeout(() => btn.classList.remove('ok', 'err'), 900);
@@ -699,12 +731,32 @@ export function keyButton(s, { cover = false, label = true } = {}) {
   if (!label || !name) b.setAttribute('aria-label', name || s.id);
   b.style.setProperty('--k', s.color || '#6b7280');
   b.dataset.id = s.id;
-  b.addEventListener('click', () => runShortcut(b, s.id));
+  if (s.hold) holdToRun(b, s.id);
+  else b.addEventListener('click', () => runShortcut(b, s.id));
   // Only an upload fills the key: a program's own icon is 32 px on Windows, 64 px on macOS, and on Linux whatever logo
   // the icon theme has, none of them a picture the user chose for the button. The agent says which is which, since the
   // picture's size cannot tell (an SVG reports a default size, often 24 px from an icon set).
   if (s.iconRev != null) applyShortcutIcon(b, icon, s.id, cover && s.iconUpload === true);
   return b;
+}
+
+const HOLD_MS = 500, HOLD_SLOP = 12;
+/** A key with a long press: a tap runs the key, holding it for half a second runs its long-press shortcut instead (and
+ *  the tap that ends the hold does nothing). Moving the finger more than a few pixels turns it into a scroll, not a hold.
+ *  Only the pointer that started the press counts (a second finger, or a mouse's right button, never starts or ends one). */
+function holdToRun(b, id) {
+  let timer = 0, held = false, owner = null, x0 = 0, y0 = 0;
+  const cancel = () => { clearTimeout(timer); timer = 0; };
+  b.addEventListener('pointerdown', (e) => {
+    if (owner !== null || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    owner = e.pointerId; held = false; x0 = e.clientX; y0 = e.clientY; cancel();
+    timer = setTimeout(() => { timer = 0; held = true; runShortcut(b, id, true); }, HOLD_MS);
+  });
+  b.addEventListener('pointermove', (e) => { if (timer && e.pointerId === owner && Math.hypot(e.clientX - x0, e.clientY - y0) > HOLD_SLOP) cancel(); });
+  // the press is over when its own pointer lifts or is taken over (a scroll); `held` stays set until the click that follows
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, (e) => { if (e.pointerId === owner) { cancel(); owner = null; } });
+  b.addEventListener('contextmenu', (e) => e.preventDefault()); // Android's WebView opens a menu on a long press
+  b.addEventListener('click', () => { if (held) held = false; else runShortcut(b, id); });
 }
 
 function applyShortcutIcon(b, icon, id, cover) {
@@ -1889,6 +1941,12 @@ export function setNight(on) {
   document.body.classList.toggle('night', on);
   applyBrightness(true);
 }
+/**
+ * Before widgets are built: a timer that ran out while the panel was closed rings during the build, so the night
+ * screen must already be on if the schedule says so (nightOn is null at start, and new settings may move the night).
+ * Only ever turns night on; tick() keeps the state up to date as before, so the day is unchanged.
+ */
+function nightBeforeBuild() { if (isNight(new Date()) && Date.now() > wakeUntil) setNight(true); }
 
 // ---------------------------------------------------------------- phone sensors
 // Room light (lux) and proximity come from the Android shell. Brightness can follow the room, the night screen can
@@ -2052,6 +2110,7 @@ export async function loadConfig() {
     if (first || JSON.stringify(cfg) !== before) {
       store.set('cfg', cfg);
       if (JSON.stringify(cfg) !== before) {
+        nightBeforeBuild();
         buildLayout();
         applyDisplay();
       }
@@ -2238,6 +2297,7 @@ function beat() {
 }
 
 // ---------------------------------------------------------------- start
+nightBeforeBuild();
 buildLayout();
 applyDisplay();
 tick();
