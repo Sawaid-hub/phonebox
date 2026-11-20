@@ -282,8 +282,12 @@ app.MapGet("/api/pair", (ConfigStore cfg) =>
         token = lan.Token,
         fingerprint = Lan.Fingerprint(lanCert),
         hosts = Lan.Addresses(),
+        macs = WakeOnLan.LocalMacs(),
     });
 });
+
+// The MAC addresses of this computer's LAN adapters: the phone keeps them to wake this PC while the agent is not running.
+app.MapGet("/api/wake/macs", () => Results.Json(new { macs = WakeOnLan.LocalMacs() }));
 
 // Pairing without USB (see PairingCodes). Start and cancel are local only (settings page); the phone claims over Wi-Fi.
 app.MapPost("/api/pair/start", (ConfigStore cfg, PairingCodes codes) =>
@@ -1098,6 +1102,7 @@ public partial class Program
             token = lan.Token,
             fingerprint = Lan.Fingerprint(lanCert),
             hosts = Lan.Addresses(),
+            macs = WakeOnLan.LocalMacs(),
         });
     }
 

@@ -1078,6 +1078,7 @@ const PRESETS_LINUX = [
   ['builtin:mute', 'Built-in: toggle mute'],
   ['builtin:monitor-off', 'Built-in: turn monitors off (X11)'],
   ['builtin:lock', 'Built-in: lock the session'],
+  ['builtin:wake', 'Built-in: wake a computer (Wake-on-LAN; args: MAC)'],
 ];
 const PRESETS_MACOS = [
   ['', 'Pick a preset…'],
@@ -1088,6 +1089,7 @@ const PRESETS_MACOS = [
   ['builtin:mute', 'Built-in: toggle mute'],
   ['builtin:monitor-off', 'Built-in: sleep the display'],
   ['builtin:lock', 'Built-in: lock (sleeps the display)'],
+  ['builtin:wake', 'Built-in: wake a computer (Wake-on-LAN; args: MAC)'],
 ];
 const presets = () => (osName === 'linux' ? PRESETS_LINUX : osName === 'macos' ? PRESETS_MACOS : PRESETS);
 const PRESETS = [
@@ -1102,6 +1104,7 @@ const PRESETS = [
   ['builtin:mute', 'Built-in: toggle mute'],
   ['builtin:monitor-off', 'Built-in: turn monitors off'],
   ['builtin:lock', 'Built-in: lock the PC'],
+  ['builtin:wake', 'Built-in: wake a computer (Wake-on-LAN; args: MAC)'],
 ];
 
 let cfg = null;        // settings being edited
